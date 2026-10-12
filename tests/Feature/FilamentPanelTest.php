@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Admin\Pages\AppVersions;
+use App\Filament\Admin\Pages\EncryptionApps;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Filament\Pages\Auth\Login;
@@ -38,21 +38,44 @@ class FilamentPanelTest extends TestCase
         $this->assertAuthenticatedAs($user);
         $this->get('/admin')
             ->assertOk()
-            ->assertSee('App Versions')
-            ->assertSee('Release history');
+            ->assertSee('Encryption Apps')
+            ->assertSee('No app profiles yet')
+            ->assertDontSee('Release history');
     }
 
-    public function test_release_history_filters_by_platform_and_update_status(): void
+    public function test_new_app_form_displays_identity_encryption_and_platform_choices(): void
     {
         $user = User::factory()->create();
         $this->actingAs($user);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        Livewire::test(AppVersions::class)
-            ->set('platformFilter', 'windows')
-            ->set('statusFilter', 'required')
-            ->assertSee('Showing 1 release records')
-            ->assertSee('Below minimum');
+        Livewire::test(EncryptionApps::class)
+            ->mountAction('newApp')
+            ->assertSee('App name')
+            ->assertSee('App icon')
+            ->assertSee('AES-256-GCM')
+            ->assertSee('RSA-3072')
+            ->assertSee('Windows')
+            ->assertSee('Linux')
+            ->assertSee('Android')
+            ->assertSee('does not build an app');
+    }
+
+    public function test_submitting_a_profile_only_displays_a_preview_message(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::test(EncryptionApps::class)
+            ->callAction('newApp', [
+                'app_name' => 'Personal vault',
+                'icon' => 'shield',
+                'algorithm' => 'hybrid',
+                'platform' => 'linux',
+            ])
+            ->assertSee('Personal vault')
+            ->assertSee('AES + RSA · Linux · Preview only, not saved or built');
     }
 
     public function test_invalid_credentials_do_not_authenticate_the_user(): void
