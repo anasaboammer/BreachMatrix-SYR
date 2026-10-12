@@ -11,8 +11,8 @@ class Victim extends Model
         'hostname',
         'ip_address',
         'os',
+        'encryption_key',
         'status',
-        'last_seen',
     ];
 
     public function encryptedFiles()

