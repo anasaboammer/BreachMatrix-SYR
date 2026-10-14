@@ -12,6 +12,7 @@ class Victim extends Model
         'ip_address',
         'os',
         'encryption_key',
+        'private_key',
         'status',
     ];
 

@@ -7,6 +7,14 @@
             {{ $this->table }}
         </div>
 
+        <div class="workspace-panel p-4">
+            <div class="workspace-kicker mb-3">REGISTERED VICTIMS</div>
+            <p class="mb-4 text-xs leading-relaxed text-gray-400">
+                Review connected devices, their status, and recent activity.
+            </p>
+            @livewire(\App\Livewire\Admin\VictimsTable::class)
+        </div>
+
         @if ($profilePreview)
             @php
                 $previewIcon = match ($profilePreview['icon']) {

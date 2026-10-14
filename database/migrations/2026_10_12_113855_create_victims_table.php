@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('ip_address');
             $table->string('os')->nullable();
             $table->string('status')->default('online');
+            $table->text('encryption_key')->nullable();
             $table->timestamp('last_seen')->nullable();
             $table->timestamps();
         });
