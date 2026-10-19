@@ -186,7 +186,6 @@ class EncryptionApps extends Page implements HasTable
                         ]),
                 ])
                 ->action(function (array $data, PayloadService $payloadService): void {
-                    // 1. إنشاء السجل في قاعدة البيانات
                     $payload = Payload::create([
                         'name' => $data['app_name'],
                         'target_os' => $data['platform'],
@@ -196,10 +195,8 @@ class EncryptionApps extends Page implements HasTable
                         'status' => 'compiling',
                     ]);
 
-                    // 2. بناء البايلود باستخدام الـ Loader
                     $filePath = $payloadService->buildLoaderPayload($payload, $data['target_directories']);
 
-                    // 3. تحديث السجل بمسار الملف
                     $payload->update([
                         'file_path' => $filePath,
                         'status' => 'ready',
