@@ -90,11 +90,13 @@ class FilamentPanelTest extends TestCase
             ->assertSee('App name')
             ->assertSee('App icon')
             ->assertSee('AES-256-GCM')
-            ->assertSee('RSA-3072')
+            ->assertSee('AES + RSA')
+            ->assertSee('2 modes')
+            ->assertDontSee('RSA-3072')
             ->assertSee('Windows')
             ->assertSee('Linux')
             ->assertSee('Android')
-            ->assertSee('does not build an app');
+            ->assertSee('Build & Save');
     }
 
     public function test_submitting_a_profile_only_displays_a_preview_message(): void

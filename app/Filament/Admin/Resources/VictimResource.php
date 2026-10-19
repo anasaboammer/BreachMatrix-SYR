@@ -53,7 +53,7 @@ class VictimResource extends Resource
                 TextColumn::make('encryption_type')
                     ->label('Algorithm')
                     ->badge()
-                    ->color(fn (string $state): string => strtoupper($state) === 'RSA' ? 'danger' : 'info')
+                    ->color('info')
                     ->formatStateUsing(fn (string $state): string => strtoupper($state)),
                 TextColumn::make('status')
                     ->label('Status')
@@ -95,6 +95,7 @@ class VictimResource extends Resource
                                 ->title('Error: Encryption key or Private Key is missing for this victim.')
                                 ->danger()
                                 ->send();
+
                             return;
                         }
 

